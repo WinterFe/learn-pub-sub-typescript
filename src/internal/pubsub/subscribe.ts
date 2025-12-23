@@ -1,7 +1,8 @@
-import type { ChannelModel, ConfirmChannel, Message } from "amqplib";
+import type { ChannelModel } from "amqplib";
 import declareAndBind from "./declare.js";
 
 export type SimpleQueueType = "durable" | "transient";
+export type AckType = "Ack" | "NackRequeue" | "NackDiscard";
 
 export async function subscribeJSON<T>(
   client: ChannelModel,
@@ -9,7 +10,7 @@ export async function subscribeJSON<T>(
   queueName: string,
   key: string,
   queueType: SimpleQueueType, // an enum to represent "durable" or "transient"
-  handler: (data: T) => void
+  handler: (data: T) => Promise<AckType> | AckType
 ): Promise<void> {
   const [channel, queue] = await declareAndBind(
     client,
@@ -23,9 +24,15 @@ export async function subscribeJSON<T>(
     const msgContentString: string = msg?.content.toString("utf8") ?? "";
     const parsedMsgContent = JSON.parse(msgContentString);
 
-    handler(parsedMsgContent);
+    const handlerData = handler(parsedMsgContent);
 
-    await channel.ack(msg);
+    if (handlerData === "Ack") {
+      await channel.ack(msg);
+    } else if (handlerData === "NackDiscard") {
+      await channel.nack(msg, false, false);
+    } else {
+      await channel.nack(msg, false, true);
+    }
   });
 }
 

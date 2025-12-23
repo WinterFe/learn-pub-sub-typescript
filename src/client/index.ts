@@ -1,4 +1,4 @@
-import amqp from "amqplib";
+import amqp, { type ConfirmChannel } from "amqplib";
 import {
   clientWelcome,
   commandStatus,
@@ -12,6 +12,7 @@ import {
   ExchangePerilDirect,
   ExchangePerilTopic,
   PauseKey,
+  WarRecognitionsPrefix,
 } from "../internal/routing/routing.js";
 import {
   GameState,
@@ -24,23 +25,54 @@ import {
   MoveOutcome,
 } from "../internal/gamelogic/move.js";
 import { handlePause } from "../internal/gamelogic/pause.js";
-import subscribeJSON from "../internal/pubsub/subscribe.js";
-import type { ArmyMove } from "../internal/gamelogic/gamedata.js";
+import subscribeJSON, { type AckType } from "../internal/pubsub/subscribe.js";
+import type {
+  ArmyMove,
+  RecognitionOfWar,
+} from "../internal/gamelogic/gamedata.js";
 import publishJSON from "../internal/pubsub/publish.js";
+import { handleWar, type WarResolution } from "../internal/gamelogic/war.js";
 
-function handlerPause(gs: GameState): (ps: PlayingState) => void {
+function handlerPause(gs: GameState): (ps: PlayingState) => AckType {
   return (ps: PlayingState) => {
     handlePause(gs, ps);
+    console.log("Acking PlayingState");
     console.log("> ");
+    return "Ack";
   };
 }
 
-function handlerMove(gs: GameState): (am: ArmyMove) => void {
+function handlerMove(
+  gs: GameState,
+  channel: ConfirmChannel
+): (am: ArmyMove) => AckType {
   return (am: ArmyMove) => {
-    handleMove(gs, am);
+    const move = handleMove(gs, am);
     console.log("> ");
+
+    if (move === MoveOutcome.Safe) {
+      console.log("Acking Safe move outcome.");
+      return "Ack";
+    } else if (move === MoveOutcome.MakeWar) {
+      console.log("Acking MakeWar move outcome.");
+      const player = gs.getPlayerSnap();
+
+      publishJSON(
+        channel,
+        ExchangePerilTopic,
+        `${WarRecognitionsPrefix}.${player.username}`,
+        am
+      );
+
+      return "Ack";
+    } else {
+      console.log("NackDiscarding all other move outcomes (SamePlayer, ...)");
+      return "NackDiscard";
+    }
   };
 }
+
+// function handlerWar()
 
 async function main() {
   console.log("Starting Peril client...");
@@ -88,7 +120,7 @@ async function main() {
     username,
     `${ArmyMovesPrefix}.*`,
     "transient",
-    handlerMove(game)
+    handlerMove(game, confirmChannel)
   );
 
   while (true) {

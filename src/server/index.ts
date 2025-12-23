@@ -3,6 +3,7 @@ import publishJSON from "../internal/pubsub/publish.js";
 import {
   ExchangePerilDirect,
   ExchangePerilTopic,
+  GameLogSlug,
   PauseKey,
 } from "../internal/routing/routing.js";
 import type { PlayingState } from "../internal/gamelogic/gamestate.js";
@@ -29,15 +30,14 @@ async function main() {
 
   printServerHelp();
 
-  const confirmChannel = await client.createConfirmChannel();
-
   await declareAndBind(
     client,
     ExchangePerilTopic,
-    "game_logs",
-    `game_logs.*`,
+    GameLogSlug,
+    `${GameLogSlug}.*`,
     "durable"
   );
+  const confirmChannel = await client.createConfirmChannel();
 
   // We're now publishing the state via commands below.
   // publishJSON(confirmChannel, ExchangePerilDirect, PauseKey, state);
