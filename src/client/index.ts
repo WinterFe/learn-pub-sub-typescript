@@ -7,19 +7,37 @@ import {
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
 import declareAndBind from "../internal/pubsub/declare.js";
-import { ExchangePerilDirect, PauseKey } from "../internal/routing/routing.js";
+import {
+  ArmyMovesPrefix,
+  ExchangePerilDirect,
+  ExchangePerilTopic,
+  PauseKey,
+} from "../internal/routing/routing.js";
 import {
   GameState,
   type PlayingState,
 } from "../internal/gamelogic/gamestate.js";
 import { commandSpawn } from "../internal/gamelogic/spawn.js";
-import { commandMove } from "../internal/gamelogic/move.js";
+import {
+  commandMove,
+  handleMove,
+  MoveOutcome,
+} from "../internal/gamelogic/move.js";
 import { handlePause } from "../internal/gamelogic/pause.js";
 import subscribeJSON from "../internal/pubsub/subscribe.js";
+import type { ArmyMove } from "../internal/gamelogic/gamedata.js";
+import publishJSON from "../internal/pubsub/publish.js";
 
 function handlerPause(gs: GameState): (ps: PlayingState) => void {
   return (ps: PlayingState) => {
     handlePause(gs, ps);
+    console.log("> ");
+  };
+}
+
+function handlerMove(gs: GameState): (am: ArmyMove) => void {
+  return (am: ArmyMove) => {
+    handleMove(gs, am);
     console.log("> ");
   };
 }
@@ -53,6 +71,7 @@ async function main() {
     "transient"
   );
   const game = new GameState(username);
+  const confirmChannel = await client.createConfirmChannel();
 
   subscribeJSON(
     client,
@@ -63,6 +82,15 @@ async function main() {
     handlerPause(game)
   );
 
+  subscribeJSON(
+    client,
+    ExchangePerilTopic,
+    username,
+    `${ArmyMovesPrefix}.*`,
+    "transient",
+    handlerMove(game)
+  );
+
   while (true) {
     const input = await getInput();
     if (input.length === 0) continue;
@@ -71,7 +99,14 @@ async function main() {
       commandSpawn(game, input);
     } else if (input[0] === "move") {
       try {
-        commandMove(game, input);
+        const move = commandMove(game, input);
+
+        publishJSON(
+          confirmChannel,
+          ExchangePerilTopic,
+          `${ArmyMovesPrefix}.${username}`,
+          move
+        );
       } catch (err) {
         console.error(err);
         continue;

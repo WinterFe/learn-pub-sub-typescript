@@ -8,7 +8,6 @@ import {
 import type { PlayingState } from "../internal/gamelogic/gamestate.js";
 import { getInput, printServerHelp } from "../internal/gamelogic/gamelogic.js";
 import declareAndBind from "../internal/pubsub/declare.js";
-import subscribeJSON from "../internal/pubsub/subscribe.js";
 
 async function main() {
   const connectionUri = "amqp://guest:guest@localhost:5672/";
